@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERGO Data Processor</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        :root {
+            --sky-blue: #87CEEB;
+            --light-sky-blue: #B0E2FF;
+            --very-light-blue: #F0F8FF;
+        }
+
+        body {
+            background-color: var(--very-light-blue);
+            font-family: 'Roboto', Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .main-container {
+            background-color: white;
+            border-radius: 15px;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            margin: 50px auto;
+            max-width: 1200px;
+            min-height: 800px;
+        }
+
+        h2 {
+            color: #2c3e50;
+            font-size: 2.8rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .nav-tabs {
+            border-bottom: 2px solid var(--light-sky-blue);
+        }
+
+        .nav-tabs .nav-link {
+            color: #2c3e50;
+            font-size: 1.2rem;
+            font-weight: 500;
+            padding: 12px 20px;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .nav-tabs .nav-link.active {
+            color: white;
+            background-color: var(--sky-blue);
+            border: none;
+        }
+
+        .tab-content {
+            border: 2px solid var(--light-sky-blue);
+            border-radius: 0 0 8px 8px;
+            background-color: white;
+            padding: 20px;
+        }
+
+        label {
+            color: #2c3e50;
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+
+        .form-control {
+            height: 50px;
+            font-size: 1.1rem;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 10px 15px;
+        }
+
+        .form-control:focus {
+            border-color: var(--sky-blue);
+            box-shadow: 0 0 0 0.2rem rgba(135, 206, 235, 0.25);
+        }
+
+        .btn {
+            font-size: 1.1rem;
+            padding: 12px 25px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background-color: var(--sky-blue);
+            border: none;
+            font-weight: 500;
+        }
+
+        .btn-primary:hover {
+            background-color: #5dade2;
+            transform: translateY(-2px);
+        }
+
+        .btn-outline-secondary {
+            border-color: var(--sky-blue);
+            color: var(--sky-blue);
+            height: 50px;
+        }
+
+        .btn-outline-secondary:hover {
+            background-color: var(--sky-blue);
+            border-color: var(--sky-blue);
+        }
+
+        #live-info {
+            min-height: 150px;
+            font-size: 1rem;
+            background-color: var(--very-light-blue);
+            border: 1px solid var(--light-sky-blue);
+            overflow-y: auto; /* Ensure the output can scroll */
+            border-radius: 8px;
+            background-color: white !important;
+            padding: 10px;
+            font-family: Consolas, monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+
+        .alert {
+            font-size: 1.1rem;
+            margin-top: 15px;
+            padding: 15px 20px;
+            border-radius: 8px;
+        }
+
+        .output-console {
+            height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-family: 'Roboto Mono', monospace;
+            margin-top: 20px;
+        }
+
+        .output-console div {
+            margin-bottom: 5px;
+        }
+
+        .btn-info {
+            background-color: var(--sky-blue);
+            border: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-info:hover {
+            background-color: #5dade2;
+            transform: translateY(-2px);
+        }
+
+        .help-button-container {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+
+        .help-button {
+            width: auto;
+            min-width: 160px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            border-radius: 50px;
+            padding: 12px 25px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .help-button:last-child {
+            margin-bottom: 0;
+        }
+
+        .help-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        /* Button colors */
+        .btn-danger.help-button {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn-warning.help-button {
+            background-color: #ffc107;
+            color: black;
+        }
+
+        /* Ensure the button stays visible on smaller screens */
+        @media (max-width: 768px) {
+            .help-button-container {
+                bottom: 20px;
+                right: 20px;
+            }
+            
+            .help-button {
+                padding: 10px 20px;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+    <!-- Include Socket.IO client library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="main-container">
+        <h2 class="mb-4">ERGO Data Processor</h2>
+
+        <!-- Add this fixed help button at the bottom right -->
+        <div class="help-button-container">
+            <button class="btn btn-danger help-button mb-2" onclick="endProcess()">
+                <i class="fas fa-stop-circle mr-2"></i>End Process
+            </button>
+            <button class="btn btn-warning help-button mb-2" onclick="clearCache()">
+                <i class="fas fa-trash mr-2"></i>Clear Cache
+            </button>
+            <button class="btn btn-info help-button" onclick="window.open('/help', '_blank')">
+                <i class="fas fa-question-circle mr-2"></i>Help Guide
+            </button>
+        </div>
+
+        <!-- Tabs -->
+        <ul class="nav nav-tabs" id="processingTabs" role="tablist">
+            <li class="nav-item">
+                <a class="nav-link active" id="preprocess-tab" data-toggle="tab" href="#preprocess" role="tab">
+                    Pre-process ERGO Result Sheet
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" id="convert-tab" data-toggle="tab" href="#convert" role="tab">
+                    Convert Results to ERGO Database Format
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" id="postprocess-tab" data-toggle="tab" href="#postprocess" role="tab">
+                    Post-process Output
+                </a>
+            </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content" id="processingTabsContent">
+            <!-- Pre-process Tab -->
+            <div class="tab-pane fade show active" id="preprocess" role="tabpanel">
+                <form id="preprocessForm" class="mb-3">
+                    <div class="form-group">
+                        <label for="preprocessFile">Select Excel File:</label>
+                        <input type="file" class="form-control" id="preprocessFile" name="file" accept=".xlsx,.xls" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Pre-process File</button>
+                </form>
+                <div id="preprocess-console" class="output-console"></div>
+            </div>
+
+            <!-- Convert Tab -->
+            <div class="tab-pane fade" id="convert" role="tabpanel">
+                <form id="convertForm" class="mb-3">
+                    <div class="form-group">
+                        <label for="convertFile">Source Excel File:</label>
+                        <input type="file" class="form-control" id="convertFile" name="source" accept=".xlsx,.xls" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="year">Year:</label>
+                        <input type="number" class="form-control" id="year" name="year" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Convert File</button>
+                </form>
+                <div id="convert-console" class="output-console"></div>
+                <button id="downloadButton" class="btn btn-success mt-3" style="display: none;">
+                    Download Processed File
+                </button>
+            </div>
+
+            <!-- Post-process Tab -->
+            <div class="tab-pane fade" id="postprocess" role="tabpanel">
+                <form id="postprocessForm" class="mb-3">
+                    <div class="form-group">
+                        <label for="postprocessFile">Select Excel File:</label>
+                        <input type="file" class="form-control" id="postprocessFile" name="file" accept=".xlsx,.xls" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Check Duplicates</button>
+                </form>
+                <div id="postprocess-console" class="output-console"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const socket = io({
+                transports: ['websocket'],
+                upgrade: false,
+                reconnection: true,
+                reconnectionAttempts: 5
+            });
+            
+            // Add connection status handling
+            socket.on('connect', () => {
+                console.log('Socket connected');
+            });
+            
+            socket.on('connect_error', (error) => {
+                console.error('Socket connection error:', error);
+                consoles['convert'](`Socket connection error: ${error.message}`);
+            });
+
+            let nextMessageId = 1;
+            let messageQueue = [];
+
+            // Handle messages for each console
+            function setupConsole(consoleId) {
+                const console = document.getElementById(consoleId);
+                return (message) => {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.innerHTML = message + '<br>';
+                    console.appendChild(messageDiv);
+                    console.scrollTop = console.scrollHeight;
+                };
+            }
+
+            const consoles = {
+                'preprocess': setupConsole('preprocess-console'),
+                'convert': setupConsole('convert-console'),
+                'postprocess': setupConsole('postprocess-console')
+            };
+
+            socket.on('progress_update', (data) => {
+                // Get the current active tab
+                const activeTab = document.querySelector('.tab-pane.active').id;
+                // Get the tab from the message if it exists
+                const messageTab = data.tab || activeTab;
+                
+                // Only show the message if it belongs to the correct tab
+                if (messageTab === activeTab && consoles[activeTab]) {
+                    consoles[activeTab](data.message);
+                    
+                    // Auto-scroll to bottom
+                    const console = document.getElementById(`${activeTab}-console`);
+                    if (console) {
+                        console.scrollTop = console.scrollHeight;
+                    }
+                }
+            });
+
+            // Pre-process form handler
+            document.getElementById('preprocessForm').onsubmit = async (e) => {
+                e.preventDefault();
+                const console = document.getElementById('preprocess-console');
+                console.innerHTML = '';
+                
+                // Show initial messages immediately
+                consoles['preprocess']("Processing started...");
+                const fileInput = document.getElementById('preprocessFile');
+                
+                if (!fileInput.files.length) {
+                    consoles['preprocess']("Error: No file selected.");
+                    return;
+                }
+            
+                const fileName = fileInput.files[0].name;
+                consoles['preprocess'](`Input source: ${fileName}`);
+                
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                
+                try {
+                    const response = await fetch('/preprocess', {
+                        method: 'POST',
+                        body: formData,
+                    });
+            
+                    // Check if the response has a JSON content type
+                    if (response.headers.get('Content-Type')?.includes('application/json')) {
+                        const result = await response.json();
+                        if (result.status === 'success') {
+                            consoles['preprocess']("Processing completed successfully.");
+                        } else {
+                            consoles['preprocess'](`Error: ${result.message}`);
+                        }
+                    } else {
+                        // Handle unexpected response (e.g., HTML error page)
+                        const text = await response.text();
+                        consoles['preprocess'](`Unexpected response: ${text}`);
+                    }
+                } catch (error) {
+                    // Handle network or parsing errors
+                    consoles['preprocess'](`Error: ${error.message}`);
+                }
+            };
+            // Convert form handlerh
+            document.getElementById('convertForm').onsubmit = async (e) => {
+                e.preventDefault();
+                const console = document.getElementById('convert-console');
+                const downloadButton = document.getElementById('downloadButton');
+                
+                // Clear previous console output and hide the download button
+                console.innerHTML = '';
+                downloadButton.style.display = 'none';
+                
+                // Show initial messages
+                consoles['convert']("Processing started...");
+                
+                // Check if file input and year are valid
+                const fileInput = document.getElementById('convertFile');
+                const yearInput = document.getElementById('year');
+                if (!fileInput.files.length) {
+                    consoles['convert']("Error: No file selected.");
+                    return;
+                }
+                if (!yearInput.value) {
+                    consoles['convert']("Error: Year is required.");
+                    return;
+                }
+                
+                const fileName = fileInput.files[0].name;
+                consoles['convert'](`Input source: ${fileName}`);
+                
+                const formData = new FormData();
+                formData.append('source', fileInput.files[0]);
+                formData.append('year', yearInput.value);
+                
+                try {
+                    const response = await fetch('/process', {
+                        method: 'POST',
+                        body: formData,
+                    });
+            
+                    // Handle JSON responses for errors
+                    if (response.headers.get('Content-Type')?.includes('application/json')) {
+                        const data = await response.json();
+                        if (data.status === 'success') {
+                            consoles['convert']("Processing completed successfully.");
+                            consoles['convert']("File ready for download.");
+                            showDownloadButton(data.fileName);
+                        } else {
+                            consoles['convert'](`Error: ${data.message}`);
+                        }
+                    } else {
+                        // Handle successful file response
+                        const blob = await response.blob();
+                        downloadButton.onclick = () => {
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = fileName.replace('.xlsx', '_database_format.xlsx');
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+                        };
+                        downloadButton.style.display = 'block';
+                        consoles['convert']("Processing completed. Click 'Download Processed File' to download.");
+                    }
+                } catch (error) {
+                    consoles['convert'](`Error: ${error.message}`);
+                }
+            };
+
+            // Post-process form handler
+            document.getElementById('postprocessForm').onsubmit = async (e) => {
+                e.preventDefault();
+                const console = document.getElementById('postprocess-console');
+                console.innerHTML = '';
+                
+                // Show initial messages immediately
+                consoles['postprocess']("Processing started...");
+                const fileName = document.getElementById('postprocessFile').files[0].name;
+                consoles['postprocess'](`Input source: ${fileName}`);
+                
+                const formData = new FormData();
+                formData.append('file', document.getElementById('postprocessFile').files[0]);
+                
+                try {
+                    const response = await fetch('/postprocess', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+                    if (!result.status === 'success') {
+                        consoles['postprocess'](`Error: ${result.message}`);
+                    }
+                } catch (error) {
+                    consoles['postprocess'](`Error: ${error.message}`);
+                }
+            };
+        });
+
+        async function clearCache() {
+            try {
+                const response = await fetch('/clear-cache', { method: 'POST' });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('Cache cleared successfully');
+                } else {
+                    alert('Error clearing cache: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error clearing cache: ' + error.message);
+            }
+        }
+
+        async function endProcess() {
+            try {
+                const response = await fetch('/end-process', { method: 'POST' });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('Process terminated successfully');
+                } else {
+                    alert('Error terminating process: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error terminating process: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
