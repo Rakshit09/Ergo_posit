@@ -4,32 +4,21 @@ import time
 import pandas as pd
 from datetime import datetime
 import numpy as np
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, Response, stream_with_context
 from werkzeug.utils import secure_filename
-from flask_socketio import SocketIO
+import json
 import os.path
 import atexit
 import shutil
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 import psutil
+from queue import Queue
+import threading
 
 global temp_output
 application = Flask(__name__)
 application.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB
-
-# Key changes for Posit Connect compatibility
-socketio = SocketIO(
-    application,
-    async_mode='threading',  # Changed from 'eventlet' to 'threading'
-    cors_allowed_origins="*",
-    ping_timeout=120,
-    ping_interval=60,
-    max_http_buffer_size=1024 * 1024 * 1024,
-    async_handlers=True,
-    logger=True,
-    engineio_logger=True
-)
 
 application.config['UPLOAD_FOLDER'] = 'uploads'
 application.config['OUTPUT'] = 'outputs'
@@ -38,6 +27,10 @@ application.config['STATIC_FOLDER'] = 'static'
 application.secret_key = 'supersecretkey'
 application.config['TEMPLATES_AUTO_RELOAD'] = True
 application.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
+# Message queue for SSE
+message_queues = {}
+
 
 current_process = None
 
@@ -80,7 +73,8 @@ def ensure_folders_exist():
             os.makedirs(folder)
 
 
-def send_progress_update(message, category='info', tab=None):
+def send_progress_update(message, category='info', tab=None, session_id=None):
+    """Send progress update via SSE"""
     if not hasattr(send_progress_update, 'message_counter'):
         send_progress_update.message_counter = 0
     send_progress_update.message_counter += 1
@@ -96,21 +90,53 @@ def send_progress_update(message, category='info', tab=None):
         'original': 'blue',
         'duplicate': 'blue',
         'info': 'black',
-        'time': '#666666'  # Gray color for timestamps
+        'time': '#666666'
     }
     
     color = colors.get(category, 'black')
     formatted_message = f'<span style="color: {colors["time"]}">[{timestamp}]</span> <span style="color: {color};">{message}</span>'
 
-    # Emit message with ID and tab information
-    socketio.emit('progress_update', {
+    # Create message data
+    data = {
         'message': formatted_message,
         'category': category,
         'message_id': send_progress_update.message_counter,
-        'tab': tab  # Add tab information
-    })
-    # Remove socketio.sleep(0) - not needed with threading mode
-    # socketio.sleep(0)
+        'tab': tab
+    }
+    
+    # Send to all connected clients
+    for sid, queue in message_queues.items():
+        if session_id is None or sid == session_id:
+            queue.put(json.dumps(data))
+
+@application.route('/events/<session_id>')
+def events(session_id):
+    """SSE endpoint for progress updates"""
+    def generate():
+        queue = Queue()
+        message_queues[session_id] = queue
+        try:
+            while True:
+                # Get message from queue with timeout
+                try:
+                    message = queue.get(timeout=30)
+                    yield f"data: {message}\n\n"
+                except:
+                    # Send keepalive
+                    yield f": keepalive\n\n"
+        finally:
+            # Clean up
+            message_queues.pop(session_id, None)
+    
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',  # Disable nginx buffering
+            'Connection': 'keep-alive'
+        }
+    )
 
 
 def save_uploaded_file(file):
@@ -281,7 +307,7 @@ def process_data_48(dataframe, year_to_find, setup, column_mapping, columns_in_t
                 break
 
     if not year_indices:
-        socketio.emit('progress_update', {'message': f"No matching year found in sheet for year {year_to_find}", 'category': 'error'})
+        send_progress_update(f"No matching year found in sheet for year {year_to_find}", 'error')
         print (f"No matching year found in sheet for year {year_to_find}")
         # Remove socketio.sleep(0)
         return pd.DataFrame()
@@ -309,17 +335,17 @@ def process_data_48(dataframe, year_to_find, setup, column_mapping, columns_in_t
     Value = np.array(list(column_d_reordered.values())).T.ravel()
 
     if len(Return_Period) != len(Value):
-        socketio.emit('progress_update', {'message': "Error: Length of 'Return Period' does not match 'Value'", 'category': 'error'})
+        send_progress_update("Error: Length of 'Return Period' does not match 'Value'", 'error')
         print( "Error: Length of 'Return Period' does not match 'Value'")
         # Remove socketio.sleep(0)
         return pd.DataFrame()
     if len(Return_Period) != len(column_d_reordered) * len(result_dataframe):
-        socketio.emit('progress_update', {'message': "Error: Length of variables does not match the number of lines of businesses", 'category': 'error'})
+        send_progress_update("Error: Length of variables does not match the number of lines of businesses", 'error')
         print("Error: Length of variables does not match the number of lines of businesses")
         # Remove socketio.sleep(0)
         return pd.DataFrame()
     if len(repeated_dataframe) != len(Value):
-        socketio.emit('progress_update', {'message': "Error: Length of repeated data and return periods don't match", 'category': 'error'})
+        send_progress_update("Error: Length of repeated data and return periods don't match", 'error')
         print ("Error: Length of repeated data and return periods don't match")
         # Remove socketio.sleep(0)
         return pd.DataFrame()
@@ -356,7 +382,7 @@ def process_data_50(dataframe, year_to_find, setup, column_mapping, columns_in_t
                 break
 
     if not year_indices:
-        socketio.emit('progress_update', {'message': f"No matching year found in sheet for year {year_to_find}", 'category': 'error'})
+        send_progress_update(f"No matching year found in sheet for year {year_to_find}", 'error')
         print (f"No matching year found in sheet for year {year_to_find}")
         # Remove socketio.sleep(0)
         return pd.DataFrame()
@@ -389,19 +415,19 @@ def process_data_50(dataframe, year_to_find, setup, column_mapping, columns_in_t
     Return_Period = list(column_d_reordered.keys()) * len(result_dataframe)
     Value = np.array(list(column_d_reordered.values())).T.ravel()
     if len(Return_Period) != len(Value):
-        socketio.emit('progress_update', {'message': "Error: Length of 'Return Period' does not match 'Value'", 'category': 'error'})
-        print( "Error: Length of 'Return Period' does not match 'Value'")
-        # Remove socketio.sleep(0)
+        send_progress_update("Error: Length of 'Return Period' does not match 'Value'", 'error')
+        print("Error: Length of 'Return Period' does not match 'Value'")
         return pd.DataFrame()
+
+    # Similarly for other occurrences:
     if len(Return_Period) != len(column_d_reordered) * len(result_dataframe):
-        socketio.emit('progress_update', {'message': "Error: Length of variables does not match the number of lines of businesses", 'category': 'error'})
+        send_progress_update("Error: Length of variables does not match the number of lines of businesses", 'error')
         print("Error: Length of variables does not match the number of lines of businesses")
-        # Remove socketio.sleep(0)
         return pd.DataFrame()
+
     if len(repeated_dataframe) != len(Value):
-        socketio.emit('progress_update', {'message': "Error: Length of repeated data and return periods don't match", 'category': 'info'})
-        print ("Error: Length of repeated data and return periods don't match")
-        # Remove socketio.sleep(0)
+        send_progress_update("Error: Length of repeated data and return periods don't match", 'error')
+        print("Error: Length of repeated data and return periods don't match")
         return pd.DataFrame()
 
     dataframe_final = repeated_dataframe.copy()
@@ -713,10 +739,7 @@ def end_process():
             child.terminate()
         
         # Clear any ongoing operations
-        socketio.emit('process_terminated', {
-            'message': 'Process terminated by user',
-            'category': 'warning'
-        })
+        send_progress_update('process_terminated', 'warning')
         
         return jsonify({'status': 'success', 'message': 'Process terminated'})
     except Exception as e:
@@ -732,6 +755,6 @@ comodoca.com
 # Modified for Posit Connect compatibility
 app = application
 
-# Only run socketio when executing directly (not through Posit Connect)
 if __name__ == '__main__':
-    socketio.run(application, debug=True)
+    # Local development
+    application.run(debug=True, host='0.0.0.0', port=5000)
