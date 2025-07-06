@@ -1,0 +1,12 @@
+{
+    "https://rconnect.dev.ajgco.com/": {
+        "server_url": "https://rconnect.dev.ajgco.com/",
+        "filename": "C:\\Users\\rajoshi\\Posit\\ERGO2 - Copy",
+        "app_url": "https://rconnect.dev.ajgco.com/content/6c1572d9-c9ee-4688-a675-00ed0fd9f917/",
+        "app_id": "194",
+        "app_guid": "6c1572d9-c9ee-4688-a675-00ed0fd9f917",
+        "title": "ERGO databaseformat Converter",
+        "app_mode": "python-api",
+        "app_store_version": 1
+    }
+}

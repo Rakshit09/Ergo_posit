@@ -1,23 +1,44 @@
 {
-    "version": 1,
-    "locale": "en_US.UTF-8",
-    "metadata": {
-      "appmode": "python-api",
-      "entrypoint": "app:application"
+  "version": 1,
+  "locale": "English_United_Kingdom.1252",
+  "metadata": {
+    "appmode": "python-api",
+    "entrypoint": "app"
+  },
+  "python": {
+    "version": "3.9.22",
+    "package_manager": {
+      "name": "pip",
+      "version": "25.1.1",
+      "package_file": "requirements.txt"
+    }
+  },
+  "deployment": {
+    "server_command": [
+      "gunicorn",
+      "--worker-class", "eventlet",
+      "-w", "1",
+      "--bind", "0.0.0.0:$PORT",
+      "--log-level", "debug",
+      "--log-file", "-",
+      "app:application"
+    ],
+    "server_set_environment": {
+      "FLASK_ENV": "production"
+    }
+  },
+  "files": {
+    "requirements.txt": {
+      "checksum": "7edbc2c9ada8db198cb9e661a3f8e16d"
     },
-    "python": {
-      "version": "3.9.0",
-      "package_manager": {
-        "name": "pip",
-        "version": "23.0.0"
-      }
+    "app.py": {
+      "checksum": "cbd68d1d558ac4a0453b7c86cfa5df5f"
     },
-    "files": {
-      "app.py": {
-        "checksum": ""
-      },
-      "requirements.txt": {
-        "checksum": ""
-      }
+    "static/docs/user_guide.pdf": {
+      "checksum": "4a3cd414ce9ecbb0d751816e340d013a"
+    },
+    "templates/index.html": {
+      "checksum": "6790f94721a827c3bebd2ce02494460b"
     }
   }
+}

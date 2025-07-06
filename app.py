@@ -1,6 +1,3 @@
-import eventlet
-eventlet.monkey_patch()
-
 import os
 import re
 import time
@@ -17,18 +14,23 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 import psutil
 
-
 global temp_output
 application = Flask(__name__)
 application.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB
+
+# Key changes for Posit Connect compatibility
 socketio = SocketIO(
     application,
-    async_mode='eventlet',
-    ping_timeout=60,
-    ping_interval=25,
+    async_mode='threading',  # Changed from 'eventlet' to 'threading'
     cors_allowed_origins="*",
-    max_http_buffer_size=1024 * 1024 * 1024,  # 1GB
-    async_handlers=True)
+    ping_timeout=120,
+    ping_interval=60,
+    max_http_buffer_size=1024 * 1024 * 1024,
+    async_handlers=True,
+    logger=True,
+    engineio_logger=True
+)
+
 application.config['UPLOAD_FOLDER'] = 'uploads'
 application.config['OUTPUT'] = 'outputs'
 application.config['STATIC_FOLDER'] = 'static'
@@ -107,8 +109,8 @@ def send_progress_update(message, category='info', tab=None):
         'message_id': send_progress_update.message_counter,
         'tab': tab  # Add tab information
     })
-    socketio.sleep(0)
-
+    # Remove socketio.sleep(0) - not needed with threading mode
+    # socketio.sleep(0)
 
 
 def save_uploaded_file(file):
@@ -281,7 +283,7 @@ def process_data_48(dataframe, year_to_find, setup, column_mapping, columns_in_t
     if not year_indices:
         socketio.emit('progress_update', {'message': f"No matching year found in sheet for year {year_to_find}", 'category': 'error'})
         print (f"No matching year found in sheet for year {year_to_find}")
-        socketio.sleep(0)
+        # Remove socketio.sleep(0)
         return pd.DataFrame()
 
     dataframe.iloc[[row_number], year_indices] = dataframe.iloc[[row_number], year_indices].infer_objects(copy=False)
@@ -309,17 +311,17 @@ def process_data_48(dataframe, year_to_find, setup, column_mapping, columns_in_t
     if len(Return_Period) != len(Value):
         socketio.emit('progress_update', {'message': "Error: Length of 'Return Period' does not match 'Value'", 'category': 'error'})
         print( "Error: Length of 'Return Period' does not match 'Value'")
-        socketio.sleep(0)
+        # Remove socketio.sleep(0)
         return pd.DataFrame()
     if len(Return_Period) != len(column_d_reordered) * len(result_dataframe):
         socketio.emit('progress_update', {'message': "Error: Length of variables does not match the number of lines of businesses", 'category': 'error'})
         print("Error: Length of variables does not match the number of lines of businesses")
-        socketio.sleep(0)
+        # Remove socketio.sleep(0)
         return pd.DataFrame()
     if len(repeated_dataframe) != len(Value):
         socketio.emit('progress_update', {'message': "Error: Length of repeated data and return periods don't match", 'category': 'error'})
         print ("Error: Length of repeated data and return periods don't match")
-        socketio.sleep(0)
+        # Remove socketio.sleep(0)
         return pd.DataFrame()
 
     dataframe_final = repeated_dataframe.copy()
@@ -356,7 +358,7 @@ def process_data_50(dataframe, year_to_find, setup, column_mapping, columns_in_t
     if not year_indices:
         socketio.emit('progress_update', {'message': f"No matching year found in sheet for year {year_to_find}", 'category': 'error'})
         print (f"No matching year found in sheet for year {year_to_find}")
-        socketio.sleep(0)
+        # Remove socketio.sleep(0)
         return pd.DataFrame()
 
     dataframe.iloc[[row_number], year_indices] = dataframe.iloc[[row_number], year_indices].infer_objects(copy=False)    
@@ -389,17 +391,17 @@ def process_data_50(dataframe, year_to_find, setup, column_mapping, columns_in_t
     if len(Return_Period) != len(Value):
         socketio.emit('progress_update', {'message': "Error: Length of 'Return Period' does not match 'Value'", 'category': 'error'})
         print( "Error: Length of 'Return Period' does not match 'Value'")
-        socketio.sleep(0)
+        # Remove socketio.sleep(0)
         return pd.DataFrame()
     if len(Return_Period) != len(column_d_reordered) * len(result_dataframe):
         socketio.emit('progress_update', {'message': "Error: Length of variables does not match the number of lines of businesses", 'category': 'error'})
         print("Error: Length of variables does not match the number of lines of businesses")
-        socketio.sleep(0)
+        # Remove socketio.sleep(0)
         return pd.DataFrame()
     if len(repeated_dataframe) != len(Value):
         socketio.emit('progress_update', {'message': "Error: Length of repeated data and return periods don't match", 'category': 'info'})
         print ("Error: Length of repeated data and return periods don't match")
-        socketio.sleep(0)
+        # Remove socketio.sleep(0)
         return pd.DataFrame()
 
     dataframe_final = repeated_dataframe.copy()
@@ -453,6 +455,7 @@ def process():
 
         year = int(year)
         temp_source = save_uploaded_file(source_file)
+        
         send_progress_update("File uploaded successfully.", 'info', 'convert')
 
         # Load source workbook
@@ -726,9 +729,9 @@ comodoca.com
 1ae91d39912bc2c"""
     return application.response_class(content, mimetype='text/plain')
 
+# Modified for Posit Connect compatibility
+app = application
+
+# Only run socketio when executing directly (not through Posit Connect)
 if __name__ == '__main__':
-    # For local development
     socketio.run(application, debug=True)
-else:
-    # For Posit Connect deployment
-    app = application

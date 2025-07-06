@@ -231,7 +231,7 @@
             <button class="btn btn-warning help-button mb-2" onclick="clearCache()">
                 <i class="fas fa-trash mr-2"></i>Clear Cache
             </button>
-            <button class="btn btn-info help-button" onclick="window.open('/help', '_blank')">
+            <button class="btn btn-info help-button" onclick="window.open(apiUrl('help'), '_blank')"> <!-- Changed to use apiUrl for help -->
                 <i class="fas fa-question-circle mr-2"></i>Help Guide
             </button>
         </div>
@@ -305,38 +305,89 @@
     <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+    <!-- Socket.IO client library already included above -->
 
     <script>
+        // Global function for API URL construction
+        function apiUrl(endpoint) {
+            // Determine the base path for the application, crucial for Posit Connect
+            // Assumes app is served at /content/<app-id>/ or similar, or under a vanity URL.
+            // If window.location.pathname is /foo/bar/ and app is at /foo/bar/, then basePath is /foo/bar
+            // If window.location.pathname is / (root), then basePath is "" (empty string)
+            let path = window.location.pathname;
+            // Remove trailing slash if it's not the root path and ends with a slash
+            if (path !== '/' && path.endsWith('/')) {
+                path = path.slice(0, -1);
+            }
+            // If path is like /index.html, get the directory part
+            if (path.includes('.html')) {
+                 path = path.substring(0, path.lastIndexOf('/'));
+            }
+            // Ensure basePath is correctly formed, even if at root.
+            // For root deployment, path might be empty string.
+            const basePath = path === "" ? "" : path; 
+            return `${basePath}/${endpoint}`;
+        }
+
+
         document.addEventListener("DOMContentLoaded", () => {
+            const socketPath = apiUrl('socket.io').substring(window.location.origin.length); // Get path relative to origin for socket.io
+            
             const socket = io({
-                transports: ['websocket'],
-                upgrade: false,
+                path: socketPath, // Use the dynamically calculated path
+                transports: ['polling'],
+                upgrade: false, // Important for environments where WebSockets might be blocked/problematic
                 reconnection: true,
-                reconnectionAttempts: 5
+                reconnectionAttempts: 5, // Try to reconnect a few times
+                // Add timeouts for client-side ping/pong to match server or be reasonable
+                pingInterval: 20000, // Client pings server if no data for 20s (server pings client every 25s)
+                pingTimeout: 10000   // Client waits 10s for server's PONG (server waits 60s for client's PONG)
             });
-            
-            // Add connection status handling
+
             socket.on('connect', () => {
-                console.log('Socket connected');
+                console.log('Socket connected via polling. Path:', socketPath);
+                // Clear any previous error messages related to socket connection in active console
+                const activeConsoleId = document.querySelector('.tab-pane.active .output-console')?.id;
+                if (activeConsoleId && consoles[activeConsoleId.split('-')[0]]) {
+                     consoles[activeConsoleId.split('-')[0]]("Socket reconnected successfully.");
+                }
+            });
+
+            socket.on('disconnect', (reason) => {
+                console.warn('Socket disconnected:', reason);
+                const activeConsoleId = document.querySelector('.tab-pane.active .output-console')?.id;
+                 if (activeConsoleId && consoles[activeConsoleId.split('-')[0]]) {
+                     consoles[activeConsoleId.split('-')[0]](`Socket disconnected: ${reason}. Attempting to reconnect...`);
+                }
             });
             
-            socket.on('connect_error', (error) => {
-                console.error('Socket connection error:', error);
-                consoles['convert'](`Socket connection error: ${error.message}`);
+            socket.on('connect_error', err => {
+                console.error('Socket connection error:', err.message, err.description, err.type, err.data);
+                const activeConsoleId = document.querySelector('.tab-pane.active .output-console')?.id;
+                 if (activeConsoleId && consoles[activeConsoleId.split('-')[0]]) {
+                    consoles[activeConsoleId.split('-')[0]](`Socket connection error: ${err.message}. Check server logs and network. Type: ${err.type}`);
+                }
             });
 
-            let nextMessageId = 1;
-            let messageQueue = [];
-
+            // Function to add messages to the correct console
+            function addMessageToConsole(tabKey, messageHtml) {
+                if (consoles[tabKey]) {
+                    consoles[tabKey](messageHtml);
+                    const consoleEl = document.getElementById(`${tabKey}-console`);
+                    if (consoleEl) {
+                        consoleEl.scrollTop = consoleEl.scrollHeight;
+                    }
+                }
+            }
+            
             // Handle messages for each console
             function setupConsole(consoleId) {
-                const console = document.getElementById(consoleId);
+                const consoleElement = document.getElementById(consoleId);
                 return (message) => {
                     const messageDiv = document.createElement('div');
-                    messageDiv.innerHTML = message + '<br>';
-                    console.appendChild(messageDiv);
-                    console.scrollTop = console.scrollHeight;
+                    messageDiv.innerHTML = message; // message is already HTML formatted by server
+                    consoleElement.appendChild(messageDiv);
+                    consoleElement.scrollTop = consoleElement.scrollHeight; // Auto-scroll
                 };
             }
 
@@ -347,191 +398,186 @@
             };
 
             socket.on('progress_update', (data) => {
-                // Get the current active tab
-                const activeTab = document.querySelector('.tab-pane.active').id;
-                // Get the tab from the message if it exists
-                const messageTab = data.tab || activeTab;
-                
-                // Only show the message if it belongs to the correct tab
-                if (messageTab === activeTab && consoles[activeTab]) {
-                    consoles[activeTab](data.message);
-                    
-                    // Auto-scroll to bottom
-                    const console = document.getElementById(`${activeTab}-console`);
-                    if (console) {
-                        console.scrollTop = console.scrollHeight;
-                    }
+                const messageTab = data.tab; // 'tab' field from server indicates target console
+                if (messageTab && consoles[messageTab]) {
+                    addMessageToConsole(messageTab, data.message);
+                } else {
+                    // Fallback or log if tab info is missing, maybe to current active tab or a general log
+                    console.warn("Progress update received without specific tab or for unknown tab:", data);
+                    // const activeTabKey = document.querySelector('.tab-pane.active')?.id;
+                    // if (activeTabKey && consoles[activeTabKey]) {
+                    //     addMessageToConsole(activeTabKey, data.message + " (Tab unspecified)");
+                    // }
                 }
             });
+            
+            // Generic form submission handler
+            async function handleFormSubmit(formId, endpoint, consoleKey) {
+                const form = document.getElementById(formId);
+                form.onsubmit = async (e) => {
+                    e.preventDefault();
+                    const consoleElement = document.getElementById(`${consoleKey}-console`);
+                    consoleElement.innerHTML = ''; // Clear previous output
 
-            // Pre-process form handler
-            document.getElementById('preprocessForm').onsubmit = async (e) => {
-                e.preventDefault();
-                const console = document.getElementById('preprocess-console');
-                console.innerHTML = '';
-                
-                // Show initial messages immediately
-                consoles['preprocess']("Processing started...");
-                const fileInput = document.getElementById('preprocessFile');
-                
-                if (!fileInput.files.length) {
-                    consoles['preprocess']("Error: No file selected.");
-                    return;
-                }
-            
-                const fileName = fileInput.files[0].name;
-                consoles['preprocess'](`Input source: ${fileName}`);
-                
-                const formData = new FormData();
-                formData.append('file', fileInput.files[0]);
-                
-                try {
-                    const response = await fetch('/preprocess', {
-                        method: 'POST',
-                        body: formData,
-                    });
-            
-                    // Check if the response has a JSON content type
-                    if (response.headers.get('Content-Type')?.includes('application/json')) {
-                        const result = await response.json();
-                        if (result.status === 'success') {
-                            consoles['preprocess']("Processing completed successfully.");
-                        } else {
-                            consoles['preprocess'](`Error: ${result.message}`);
-                        }
-                    } else {
-                        // Handle unexpected response (e.g., HTML error page)
-                        const text = await response.text();
-                        consoles['preprocess'](`Unexpected response: ${text}`);
+                    addMessageToConsole(consoleKey, "<i>Processing started...</i>");
+                    
+                    const fileInput = form.querySelector('input[type="file"]');
+                    if (fileInput && !fileInput.files.length) {
+                        addMessageToConsole(consoleKey, "<span style='color:red;'>Error: No file selected.</span>");
+                        return;
                     }
-                } catch (error) {
-                    // Handle network or parsing errors
-                    consoles['preprocess'](`Error: ${error.message}`);
-                }
-            };
-            // Convert form handlerh
-            document.getElementById('convertForm').onsubmit = async (e) => {
-                e.preventDefault();
-                const console = document.getElementById('convert-console');
-                const downloadButton = document.getElementById('downloadButton');
-                
-                // Clear previous console output and hide the download button
-                console.innerHTML = '';
-                downloadButton.style.display = 'none';
-                
-                // Show initial messages
-                consoles['convert']("Processing started...");
-                
-                // Check if file input and year are valid
-                const fileInput = document.getElementById('convertFile');
-                const yearInput = document.getElementById('year');
-                if (!fileInput.files.length) {
-                    consoles['convert']("Error: No file selected.");
-                    return;
-                }
-                if (!yearInput.value) {
-                    consoles['convert']("Error: Year is required.");
-                    return;
-                }
-                
-                const fileName = fileInput.files[0].name;
-                consoles['convert'](`Input source: ${fileName}`);
-                
-                const formData = new FormData();
-                formData.append('source', fileInput.files[0]);
-                formData.append('year', yearInput.value);
-                
-                try {
-                    const response = await fetch('/process', {
-                        method: 'POST',
-                        body: formData,
-                    });
-            
-                    // Handle JSON responses for errors
-                    if (response.headers.get('Content-Type')?.includes('application/json')) {
-                        const data = await response.json();
-                        if (data.status === 'success') {
-                            consoles['convert']("Processing completed successfully.");
-                            consoles['convert']("File ready for download.");
-                            showDownloadButton(data.fileName);
-                        } else {
-                            consoles['convert'](`Error: ${data.message}`);
-                        }
-                    } else {
-                        // Handle successful file response
-                        const blob = await response.blob();
-                        downloadButton.onclick = () => {
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = fileName.replace('.xlsx', '_database_format.xlsx');
-                            document.body.appendChild(a);
-                            a.click();
-                            window.URL.revokeObjectURL(url);
-                            document.body.removeChild(a);
-                        };
-                        downloadButton.style.display = 'block';
-                        consoles['convert']("Processing completed. Click 'Download Processed File' to download.");
+                    if (fileInput) {
+                         addMessageToConsole(consoleKey, `Input source: ${fileInput.files[0].name}`);
                     }
-                } catch (error) {
-                    consoles['convert'](`Error: ${error.message}`);
-                }
-            };
 
-            // Post-process form handler
-            document.getElementById('postprocessForm').onsubmit = async (e) => {
-                e.preventDefault();
-                const console = document.getElementById('postprocess-console');
-                console.innerHTML = '';
-                
-                // Show initial messages immediately
-                consoles['postprocess']("Processing started...");
-                const fileName = document.getElementById('postprocessFile').files[0].name;
-                consoles['postprocess'](`Input source: ${fileName}`);
-                
-                const formData = new FormData();
-                formData.append('file', document.getElementById('postprocessFile').files[0]);
-                
-                try {
-                    const response = await fetch('/postprocess', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    const result = await response.json();
-                    if (!result.status === 'success') {
-                        consoles['postprocess'](`Error: ${result.message}`);
+                    const formData = new FormData(form);
+                    
+                    try {
+                        const response = await fetch(apiUrl(endpoint), {
+                            method: 'POST',
+                            body: formData,
+                        });
+
+                        if (response.headers.get('Content-Type')?.includes('application/json')) {
+                            const result = await response.json();
+                            // Messages during processing come via Socket.IO.
+                            // This handles the final status from the HTTP request.
+                            if (result.status === 'error') {
+                                addMessageToConsole(consoleKey, `<span style='color:red;'>Request Error: ${result.message}</span>`);
+                            } else if (result.status === 'warning') {
+                                addMessageToConsole(consoleKey, `<span style='color:orange;'>Request Warning: ${result.message || 'Completed with warnings.'}</span>`);
+                            } else {
+                                // For preprocess and postprocess, a success message here is fine.
+                                // For convert, the download handling is separate.
+                                if (consoleKey !== 'convert') {
+                                   addMessageToConsole(consoleKey, `<i>Request completed: ${result.message || 'Success.'}</i>`);
+                                }
+                            }
+                        } else if (response.ok && response.headers.get('Content-Type')?.includes('spreadsheetml.sheet')) {
+                            // This is for the /process (convert) endpoint successful file download
+                            addMessageToConsole(consoleKey, "<i>File ready for download.</i>");
+                            const blob = await response.blob();
+                            const downloadButton = document.getElementById('downloadButton');
+                            
+                            // Extract filename from Content-Disposition header if available
+                            let fileNameFromServer = "processed_file.xlsx"; 
+                            const disposition = response.headers.get('Content-Disposition');
+                            if (disposition && disposition.indexOf('attachment') !== -1) {
+                                const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                                const matches = filenameRegex.exec(disposition);
+                                if (matches != null && matches[1]) {
+                                  fileNameFromServer = matches[1].replace(/['"]/g, '');
+                                }
+                            } else if (fileInput) { // Fallback to input filename based logic
+                                fileNameFromServer = fileInput.files[0].name.replace(/\.(xlsx|xls)$/, '_database_format.xlsx');
+                            }
+
+                            downloadButton.onclick = () => {
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = fileNameFromServer;
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                            };
+                            downloadButton.style.display = 'block';
+                            addMessageToConsole(consoleKey, "Processing completed. Click 'Download Processed File' button.");
+
+                        } else {
+                            // Handle other non-JSON, non-file success responses or errors
+                            const text = await response.text();
+                            if (!response.ok) {
+                                 addMessageToConsole(consoleKey, `<span style='color:red;'>Server Error (${response.status}): ${text.substring(0,300)}</span>`);
+                            } else {
+                                 addMessageToConsole(consoleKey, `Unexpected server response: ${text.substring(0,300)}`);
+                            }
+                        }
+                    } catch (error) {
+                        addMessageToConsole(consoleKey, `<span style='color:red;'>Network or client-side error: ${error.message}</span>`);
+                        console.error("Form submission error:", error);
                     }
-                } catch (error) {
-                    consoles['postprocess'](`Error: ${error.message}`);
+                };
+            }
+
+            handleFormSubmit('preprocessForm', 'preprocess', 'preprocess');
+            handleFormSubmit('convertForm', 'process', 'convert');
+            handleFormSubmit('postprocessForm', 'postprocess', 'postprocess');
+            
+            // Hide download button initially for convert tab
+            document.querySelector('#convert-tab').addEventListener('click', () => {
+                 document.getElementById('downloadButton').style.display = 'none';
+            });
+             // Clear console when tab changes
+            $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+                const targetPaneId = $(e.target).attr("href"); // #preprocess, #convert, #postprocess
+                const consoleId = targetPaneId.substring(1) + "-console"; // preprocess-console, etc.
+                const consoleElement = document.getElementById(consoleId);
+                if (consoleElement) {
+                    // consoleElement.innerHTML = '<i>Console cleared on tab switch. Ready for new operation.</i>';
                 }
-            };
+                if (targetPaneId !== "#convert") { // Hide download button if not on convert tab
+                    document.getElementById('downloadButton').style.display = 'none';
+                }
+            });
         });
 
+        // Keep these functions global or move them into DOMContentLoaded and pass apiUrl
         async function clearCache() {
+            const consoleId = document.querySelector('.tab-pane.active .output-console')?.id;
+            const activeTabKey = consoleId ? consoleId.split('-')[0] : null;
+
+            if (activeTabKey && consoles[activeTabKey]) {
+                 consoles[activeTabKey]("<i>Attempting to clear cache...</i>");
+            } else {
+                alert("Attempting to clear cache...");
+            }
+
             try {
-                const response = await fetch('/clear-cache', { method: 'POST' });
+                const response = await fetch(apiUrl('clear-cache'), { method: 'POST' });
                 const data = await response.json();
-                if (data.status === 'success') {
-                    alert('Cache cleared successfully');
+                const message = `Cache clear status: ${data.message}`;
+                if (activeTabKey && consoles[activeTabKey]) {
+                    consoles[activeTabKey](data.status === 'success' ? `<span style='color:green;'>${message}</span>` : `<span style='color:red;'>${message}</span>`);
                 } else {
-                    alert('Error clearing cache: ' + data.message);
+                    alert(message);
                 }
             } catch (error) {
-                alert('Error clearing cache: ' + error.message);
+                 const errorMessage = `Error clearing cache: ${error.message}`;
+                 if (activeTabKey && consoles[activeTabKey]) {
+                    consoles[activeTabKey](`<span style='color:red;'>${errorMessage}</span>`);
+                } else {
+                    alert(errorMessage);
+                }
             }
         }
 
         async function endProcess() {
+            const consoleId = document.querySelector('.tab-pane.active .output-console')?.id;
+            const activeTabKey = consoleId ? consoleId.split('-')[0] : null;
+
+            if (activeTabKey && consoles[activeTabKey]) {
+                 consoles[activeTabKey]("<i>Attempting to end server process/tasks...</i>");
+            } else {
+                alert("Attempting to end server process/tasks...");
+            }
             try {
-                const response = await fetch('/end-process', { method: 'POST' });
+                const response = await fetch(apiUrl('end-process'), { method: 'POST' });
                 const data = await response.json();
-                if (data.status === 'success') {
-                    alert('Process terminated successfully');
+                const message = `End process status: ${data.message}`;
+                 if (activeTabKey && consoles[activeTabKey]) {
+                    consoles[activeTabKey](data.status === 'success' ? `<span style='color:green;'>${message}</span>` : `<span style='color:orange;'>${message}</span>`);
                 } else {
-                    alert('Error terminating process: ' + data.message);
+                    alert(message);
                 }
             } catch (error) {
-                alert('Error terminating process: ' + error.message);
+                const errorMessage = `Error ending process: ${error.message}`;
+                if (activeTabKey && consoles[activeTabKey]) {
+                    consoles[activeTabKey](`<span style='color:red;'>${errorMessage}</span>`);
+                } else {
+                    alert(errorMessage);
+                }
             }
         }
     </script>
